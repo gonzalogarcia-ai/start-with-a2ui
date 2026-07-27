@@ -44,13 +44,32 @@ bun install
 > npm run install:agent
 > ```
 
-3. Set up your Gemeni API key:
+3. Set up your API keys:
 
-Create a `.env` file inside the `agent` folder with the following content:
+The agent will not start unless a `GEMINI_API_KEY` is present in the environment (via `agent/.env`). This is required even if you don't plan to use Gemini as your LLM provider — if it is missing, the app breaks and never comes up.
+
+Create a `.env` file with the following content:
 
 ```
-GEMENI_API_KEY=sk-...your-openai-key-here...
+GEMINI_API_KEY=your-gemini-api-key
 ```
+
+If you don't have a Gemini API key, you need to:
+
+- put a placeholder value there just to satisfy the check (e.g. `GEMINI_API_KEY=placeholder`), and
+- use a different LLM provider by adding its API key alongside and pointing `LITELLM_MODEL` at that provider's model.
+
+Example — use AWS Bedrock (Claude 3.5 Sonnet) instead of Gemini:
+
+```
+GEMINI_API_KEY=placeholder
+AWS_ACCESS_KEY_ID=your-aws-access-key
+AWS_SECRET_ACCESS_KEY=your-aws-secret-key
+AWS_REGION=eu-west-1
+LITELLM_MODEL=bedrock/eu.anthropic.claude-3-5-sonnet-20241022-v2:0
+```
+
+The `LITELLM_MODEL` env var is read in `agent/agent.py` and passed to LiteLLM, so any LiteLLM-supported provider works (Bedrock, OpenAI, Anthropic, etc.) as long as the matching credentials are in the environment.
 
 4. Start the development server:
 
