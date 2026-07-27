@@ -1,6 +1,6 @@
 # CopilotKit <> A2A + A2UI Starter
 
-First project about the A2UI protocol and how to generate A2UI declarative components with Agents.
+First project about the A2UI protocol and how to generate A2UI declarative (fixed- and dynamic-schema A2UI) components with Agents.
 
 This is a starter template for building AI agents that use [A2UI](https://a2ui.org) and [CopilotKit](https://copilotkit.ai). It provides a modern Next.js application with an integrated restaurant finder agent that can find restaurants and book reservations
 
