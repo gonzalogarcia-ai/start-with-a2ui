@@ -1,12 +1,22 @@
 "use client";
 
 import {
+  A2UIProvider,
+  A2UIRenderer,
+  basicCatalog,
+  useA2UI,
+  useA2UIActions,
+  useA2UIError,
+  type A2UIClientEventMessage,
+} from "@copilotkit/a2ui-renderer";
+import {
   useAgent,
   useCopilotKit,
   type ReactActivityMessageRenderer,
 } from "@copilotkit/react-core/v2";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { z } from "zod";
+import { toV09 } from "./a2ui-v08-to-v09";
 
 type A2UIOperation = {
   beginRendering?: { surfaceId?: string };
@@ -270,6 +280,7 @@ function RestaurantList({
   );
 }
 
+// TODO delete after dynamic booking form is verified end-to-end.
 function BookingForm({
   operations,
   surfaceId,
@@ -407,6 +418,115 @@ function BookingConfirmation({
   );
 }
 
+function BookingSurfaceMessagePump({
+  operations,
+  surfaceId,
+}: {
+  operations: A2UIOperation[];
+  surfaceId: string;
+}) {
+  const { processMessages } = useA2UIActions();
+  const { getSurface, version } = useA2UI();
+  const error = useA2UIError();
+  const lastHashRef = useRef<string>("");
+  useEffect(() => {
+    const s = getSurface(surfaceId);
+    let compIds: string[] = [];
+    try {
+      const cm = (s as unknown as {
+        componentsModel?: { components?: Map<string, unknown> };
+      })?.componentsModel;
+      if (cm?.components instanceof Map) {
+        compIds = Array.from(cm.components.keys());
+      }
+    } catch (e) {
+      compIds = [`err: ${(e as Error).message}`];
+    }
+    console.log(
+      "[BookingSurface] after processMessages, surface:",
+      s,
+      "version:",
+      version,
+      "error:",
+      error,
+      "componentIdsInSurface:",
+      compIds,
+    );
+  });
+  useEffect(() => {
+    const v09 = toV09(operations);
+    const hash = JSON.stringify(v09);
+    if (hash === lastHashRef.current) return;
+    lastHashRef.current = hash;
+    console.log("[BookingSurface] v0.8 operations:", operations);
+    console.log("[BookingSurface] v0.9 operations:", v09);
+    const uc = v09.find((o) => (o as { updateComponents?: unknown }).updateComponents) as
+      | { updateComponents?: { components?: Array<{ id?: string }> } }
+      | undefined;
+    console.log(
+      "[BookingSurface] component ids after transform:",
+      uc?.updateComponents?.components?.map((c) => c.id),
+    );
+    console.log(
+      "[BookingSurface] root component payload:",
+      uc?.updateComponents?.components?.find((c) => c.id === "root"),
+    );
+    processMessages(v09);
+  }, [operations, processMessages]);
+  return null;
+}
+
+function DynamicBookingSurface({
+  operations,
+  surfaceId,
+}: {
+  operations: A2UIOperation[];
+  surfaceId: string;
+}) {
+  console.log("[DynamicBookingSurface] rendering, surfaceId:", surfaceId);
+  const { copilotkit } = useCopilotKit();
+  const { agent } = useAgent({ agentId: "default" });
+
+  const onAction = useCallback(
+    async (message: A2UIClientEventMessage) => {
+      if (!copilotkit || !agent) return;
+      const ua = (message as { userAction?: Record<string, unknown> })
+        .userAction;
+      if (!ua) return;
+      const wire = {
+        userAction: {
+          actionName: (ua.name as string) ?? "",
+          sourceComponentId: (ua.sourceComponentId as string) ?? "",
+          surfaceId,
+          timestamp:
+            (ua.timestamp as string) ?? new Date().toISOString(),
+          context: (ua.context ?? {}) as Record<string, unknown>,
+        },
+      };
+      try {
+        copilotkit.setProperties({
+          ...copilotkit.properties,
+          a2uiAction: wire,
+        });
+        await copilotkit.runAgent({ agent });
+      } finally {
+        if (copilotkit.properties) {
+          const { a2uiAction: _drop, ...rest } = copilotkit.properties;
+          copilotkit.setProperties(rest);
+        }
+      }
+    },
+    [copilotkit, agent, surfaceId],
+  );
+
+  return (
+    <A2UIProvider catalog={basicCatalog} onAction={onAction}>
+      <BookingSurfaceMessagePump operations={operations} surfaceId={surfaceId} />
+      <A2UIRenderer surfaceId={surfaceId} />
+    </A2UIProvider>
+  );
+}
+
 function A2UIV08Surface({ content }: { content: unknown }) {
   const operations = getOperations(content);
 
@@ -421,7 +541,9 @@ function A2UIV08Surface({ content }: { content: unknown }) {
   const surfaceId = getSurfaceId(operations) ?? "default";
 
   if (surfaceId === "booking-form") {
-    return <BookingForm operations={operations} surfaceId={surfaceId} />;
+    return (
+      <DynamicBookingSurface operations={operations} surfaceId={surfaceId} />
+    );
   }
 
   if (surfaceId === "confirmation") {
